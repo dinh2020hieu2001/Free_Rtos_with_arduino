@@ -3,7 +3,6 @@
 #include <task.h>
 #include <Wire.h>
 #include <timers.h>
-
 #define R1  4
 #define G1  5
 #define B1  6
@@ -16,16 +15,11 @@
 #define A   A0
 #define B   A1
 #define C   A2
-#define RTC 0x68
-#define MAX_X 32      //  chiều dài của matrix led
-#define MAX_Y 16      // chiều rộng của matrix led
+
 unsigned char Graphic_x =0 , Graphic_y = 0;
 TimerHandle_t Read_real_time;
 BaseType_t xRead_real_time;
-char Buffer_display[3][16][4] =  {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,};
-;
+char Buffer_display[3][16][4];
 const char font [][7] ={
 0x38,0x44,0x4C,0x54,0x64,0x44,0x38, //0 48
 0x10,0x30,0x10,0x10,0x10,0x10,0x38, //1 49
@@ -54,7 +48,7 @@ void setup (){
    pinMode (CLK, OUTPUT);
    pinMode (OE,  OUTPUT);
    pinMode (STB, OUTPUT);
-   put_char(11,1,10,0x04);
+   put_char(15,1,10,0x04);
    Read_real_time = xTimerCreate ("a", pdMS_TO_TICKS(950), pdTRUE,0, real_time);
    Wire.beginTransmission(0x68);
    Wire.write ((byte)0x00);
@@ -62,14 +56,14 @@ void setup (){
    Wire.requestFrom (0x68, 7);
    int x;
    x = bcd2dec (Wire.read() & 0x7f);
-   put_char(6,8,x/10,0x02);
-   put_char(13,8,x%10,0x02);
+   put_char_size2(0,0,x/10,0x02);
+   //put_char(17,8,x%10,0x02);
    x = bcd2dec(Wire.read() );
-   put_char(13,1,x/10,0x05);
-   put_char(18,1,x%10,0x05);
+   put_char(17,1,x/10,0x05);
+   put_char(22,1,x%10,0x05);
    x = bcd2dec(Wire.read() & 0x3f);
-   put_char(1,1,x/10,0x05);
-   put_char(6,1,x%10,0x05);
+   put_char(5,1,x/10,0x05);
+   put_char(11,1,x%10,0x05);
    xRead_real_time = xTimerStart (Read_real_time, 0);
    xTaskCreate (xtask,"2",128,NULL, 1, NULL);
    vTaskStartScheduler();
@@ -83,26 +77,37 @@ static void real_time(){
    Wire.endTransmission ();
    Wire.requestFrom (0x68, 7);
    int x;
-
-
    x = bcd2dec (Wire.read() & 0x7f);
-   put_char(6,8,x/10,0x02);
-   put_char(13,8,x%10,0x02);
+   put_char(10,8,x/10,0x02);
+   put_char(17,8,x%10,0x02);
    if (x == 0)  { 
       x = bcd2dec(Wire.read() );
-      put_char(13,1,x/10,0x05);
-      put_char(18,1,x%10,0x05);
+      put_char(17,1,x/10,0x05);
+      put_char(22,1,x%10,0x05);
       if (x == 0){
          x = bcd2dec(Wire.read() & 0x3f);
-         put_char(1,1,x/10,0x05);
-         put_char(6,1,x%10,0x05);
+         put_char(5,1,x/10,0x05);
+         put_char(11,1,x%10,0x05);
       }
    }
 }
 void xtask (void *pv ){
    while (1){
-      quet_led();
-      vTaskDelay(pdMS_TO_TICKS(4));
+      static unsigned char z = 0;// biến đếm hàng;
+      unsigned char i;
+      digitalWrite (OE, HIGH); // tắt hết LED
+      for (i = 0; i < 4; i++){
+         data_transfet (Buffer_display[0][z][i], Buffer_display[1][z][i],
+                        Buffer_display[2][z][i], Buffer_display[0][z+8][i],
+                        Buffer_display[1][z+8][i], Buffer_display[2][z+8][i]);
+      }
+      rows(z);
+      digitalWrite (STB, LOW); digitalWrite (STB, HIGH);
+      digitalWrite (OE, LOW);// bật LED
+      z++;
+      if (z == 8) z = 0;
+      int count;
+      delay(1);
    }
 }
 void data_transfet (char byte_r1, char byte_g1, char byte_b1, char byte_r2, char byte_g2, char byte_b2 ){ // chyển dữ liệu vào màn hình
@@ -143,7 +148,7 @@ void quet_led(void){
    digitalWrite (STB, LOW); digitalWrite (STB, HIGH);
    digitalWrite (OE, LOW);// bật LED
    z++;
-   if (z == 8) z = 0;delay(1);
+   if (z == 8) z = 0; delay (1);
 }
 
 void set_pixel (unsigned char x, unsigned char y, unsigned char color) {
@@ -168,16 +173,29 @@ void clear_display (){
 void put_char (int i, int j, char txt, char color){
    char x =0, y=0, z = txt,f[7];
    f[0] = font [z][0];
-   Serial.print (f[0]);
-   f[1] = font [z][1]; Serial.print (f[1]);
-   f[2] = font [z][2]; Serial.print (f[2]);
-   f[3] = font [z][3]; Serial.print (f[3]);
-   f[4] = font [z][4]; Serial.print (f[4]);
-   f[5] = font [z][5]; Serial.print (f[5]);
-   f[6] = font [z][6]; Serial.println (f[6]);
+   f[1] = font [z][1];
+   f[2] = font [z][2];
+   f[3] = font [z][3];
+   f[4] = font [z][4];
+   f[5] = font [z][5];
+   f[6] = font [z][6]; 
    for (y = 0; y <7; y++){
       for (x = 0 ; x < 5; x++) {
          if ((f[y] & (0x40 >> x) ) != 0) set_pixel (x + i, y +j, color);
+         else set_pixel (x + i, y +j ,0x00);
+      }
+   }
+}
+void put_char_size2(int i, int j, char txt, char color){
+   char x =0, y=0 ,z = txt;
+   for (y = 0; y <7; y++){
+      for (x = 0 ; x < 5; x++) {
+         if ((font[z][y] & (0x40 >> x) ) != 0) {
+            set_pixel (x *2 + i, y*2  +j, color);
+            set_pixel (x *2 + i +1 , y*2  + j, color);
+            set_pixel (x *2 + i +1 , y*2  + j +1, color);
+            set_pixel (x *2 + i, y*2  +j +1 , color);
+         }
          else set_pixel (x + i, y +j ,0x00);
       }
    }
