@@ -1,0 +1,217 @@
+#include <Arduino_FreeRTOS.h>
+#include <queue.h>
+#include <task.h>
+#include <Wire.h>
+#include <timers.h>
+#define R1  4
+#define G1  5
+#define B1  6
+#define R2  7
+#define G2  8
+#define B2  9
+#define CLK 10
+#define OE  11
+#define STB 12
+#define A   A0
+#define B   A1
+#define C   A2
+
+unsigned char Graphic_x =0 , Graphic_y = 0;
+TimerHandle_t Read_real_time;
+BaseType_t xRead_real_time;
+char Buffer_display[3][16][4];
+const char font [][7] ={
+0x38,0x44,0x4C,0x54,0x64,0x44,0x38, //0 48
+0x10,0x30,0x10,0x10,0x10,0x10,0x38, //1 49
+0x38,0x44,0x04,0x18,0x20,0x40,0x7C, //2 50
+0x38,0x44,0x04,0x38,0x04,0x44,0x38, //3 51
+0x08,0x18,0x28,0x48,0x7C,0x08,0x08, //4 52
+0x7C,0x40,0x40,0x78,0x04,0x44,0x38, //5 53
+0x18,0x20,0x40,0x78,0x44,0x44,0x38, //6 54
+0x7C,0x04,0x08,0x10,0x20,0x20,0x20, //7 55
+0x38,0x44,0x44,0x38,0x44,0x44,0x38, //8 56
+0x38,0x44,0x44,0x3C,0x04,0x08,0x30, //9 57
+0x00,0x60,0x60,0x00,0x60,0x60,0x00, //: 58
+};
+void setup (){
+   Serial.begin(9600);
+   Wire.begin();
+   pinMode (G1, OUTPUT);// cài đặt chế độ hoạt động của các chân
+   pinMode (R1, OUTPUT);
+   pinMode (B1, OUTPUT);
+   pinMode (R2, OUTPUT);
+   pinMode (G2, OUTPUT);
+   pinMode (B2, OUTPUT);
+   pinMode (A,  OUTPUT);
+   pinMode (B,  OUTPUT);
+   pinMode (C,  OUTPUT);
+   pinMode (CLK, OUTPUT);
+   pinMode (OE,  OUTPUT);
+   pinMode (STB, OUTPUT);
+
+   Read_real_time = xTimerCreate ("a", pdMS_TO_TICKS(950), pdTRUE,0, real_time);
+   Wire.beginTransmission(0x68);
+   Wire.write ((byte)0x00);
+   Wire.endTransmission ();
+   Wire.requestFrom (0x68, 7);
+   int x;
+   x = bcd2dec (Wire.read() & 0x7f);
+   put_char(22,8,x/10,0x02);
+   put_char(27,8,x%10,0x02);
+   x = bcd2dec(Wire.read() );
+   put_char(22,1,x/10,0x05);
+   put_char(27,1,x%10,0x05);
+   x = bcd2dec(Wire.read() & 0x3f);
+   put_char_size2(0,1,x/10,0x05);
+   put_char_size2(11,1,x%10,0x04);
+   xRead_real_time = xTimerStart (Read_real_time, 0);
+   xTaskCreate (xtask,"2",128,NULL, 1, NULL);
+   vTaskStartScheduler();
+   
+}
+void loop (){
+}
+static void real_time(){
+   Wire.beginTransmission(0x68);
+   Wire.write ((byte)0x00);
+   Wire.endTransmission ();
+   Wire.requestFrom (0x68, 7);
+   int x;
+   x = bcd2dec (Wire.read() & 0x7f);
+   put_char(22,8,x/10,0x02);
+   put_char(27,8,x%10,0x02);
+   if (x == 0)  { 
+      x = bcd2dec(Wire.read() );
+      put_char(22,1,x/10,0x05);
+      put_char(27,1,x%10,0x05);
+      if (x == 0){
+         x = bcd2dec(Wire.read() & 0x3f);
+         put_char_size2(0,1,x/10,0x05);
+         put_char_size2(11,1,x%10,0x04);
+      }
+   }
+}
+void xtask (void *pv ){
+   while (1){
+      static unsigned char z = 0;// biến đếm hàng;
+      unsigned char i;
+      digitalWrite (OE, HIGH); // tắt hết LED
+      for (i = 0; i < 4; i++){
+         data_transfet (Buffer_display[0][z][i], Buffer_display[1][z][i],
+                        Buffer_display[2][z][i], Buffer_display[0][z+8][i],
+                        Buffer_display[1][z+8][i], Buffer_display[2][z+8][i]);
+      }
+      rows(z);
+      digitalWrite (STB, LOW); digitalWrite (STB, HIGH);
+      digitalWrite (OE, LOW);// bật LED
+      z++;
+      if (z == 8) z = 0;
+      int count;
+      delay(1);
+   }
+}
+void data_transfet (char byte_r1, char byte_g1, char byte_b1, char byte_r2, char byte_g2, char byte_b2 ){ // chyển dữ liệu vào màn hình
+   unsigned char i, mask;
+   for (i = 0; i < 8; i++){
+      mask = 0x80 >> i;
+      digitalWrite (R1, byte_r1 & mask);
+      digitalWrite (G1, byte_g1 & mask);
+      digitalWrite (B1, byte_b1 & mask);
+      digitalWrite (R2, byte_r2 & mask);
+      digitalWrite (G2, byte_g2 & mask);
+      digitalWrite (B2, byte_b2 & mask);
+      digitalWrite (CLK, LOW); digitalWrite (CLK, HIGH); // tạo xung clk cho phép chuyển dữ liệu
+   }
+}
+void rows (unsigned char row_number){  // chọn hàng được sáng
+   switch (row_number){
+      case 0:{ digitalWrite(A, LOW);digitalWrite (B, LOW); digitalWrite (C, LOW);break;}
+      case 1:{ digitalWrite(A, HIGH);digitalWrite (B, LOW); digitalWrite (C, LOW);break;}
+      case 2:{ digitalWrite(A, LOW);digitalWrite (B, HIGH); digitalWrite (C, LOW);break;}
+      case 3:{ digitalWrite(A, HIGH);digitalWrite (B, HIGH); digitalWrite (C, LOW);break;}
+      case 4:{ digitalWrite(A, LOW);digitalWrite (B, LOW); digitalWrite (C, HIGH);break;}
+      case 5:{ digitalWrite(A, HIGH);digitalWrite (B, LOW); digitalWrite (C, HIGH);break;}
+      case 6:{ digitalWrite(A, LOW);digitalWrite (B, HIGH); digitalWrite (C, HIGH);break;}
+      case 7:{ digitalWrite(A, HIGH);digitalWrite (B, HIGH); digitalWrite (C, HIGH);break;}
+   }
+}
+void quet_led(void){
+   static unsigned char z = 0;// biến đếm hàng;
+   unsigned char i;
+   digitalWrite (OE, HIGH); // tắt hết LED
+   for (i = 0; i < 4; i++){
+      data_transfet (Buffer_display[0][z][i], Buffer_display[1][z][i],
+                     Buffer_display[2][z][i], Buffer_display[0][z+8][i],
+                     Buffer_display[1][z+8][i], Buffer_display[2][z+8][i]);
+   }
+   rows(z);
+   digitalWrite (STB, LOW); digitalWrite (STB, HIGH);
+   digitalWrite (OE, LOW);// bật LED
+   z++;
+   if (z == 8) z = 0; delay (1);
+}
+
+void set_pixel (unsigned char x, unsigned char y, unsigned char color) {
+   if (x >31 || x <0 || y >15|| y <0) return;
+   if ((color & 0x01) != 0)  Buffer_display [0][y][x/8] = Buffer_display[0][y][x/8] | (0x80 >> (x %8));
+   else Buffer_display[0][y][x/8] = Buffer_display[0][y][x/8] & (~(0x80 >> (x %8)));
+   
+   if ((color & 0x02) != 0)  Buffer_display [1][y][x/8] = Buffer_display[1][y][x/8] | (0x80 >> (x %8));
+   else Buffer_display[1][y][x/8] =Buffer_display[1][y][x/8] & (~(0x80 >> (x %8)));
+   
+   if ((color & 0x04) != 0)  Buffer_display [2][y][x/8] = Buffer_display[2][y][x/8] | (0x80 >> (x %8));
+   else Buffer_display[2][y][x/8] =Buffer_display[2][y][x/8] & (~(0x80 >> (x %8)));
+}
+void clear_display (){
+   unsigned char i, j, k;
+   for (i = 0;i < 3; i++)
+   for (j =0; j < 32; j++)
+   for (k =0; k < 4; k++)Buffer_display [i][j][k] = 0x00;
+
+}
+
+void put_char (int i, int j, char txt, char color){
+   char x =0, y=0, z = txt,f[7];
+   f[0] = font [z][0];
+   f[1] = font [z][1];
+   f[2] = font [z][2];
+   f[3] = font [z][3];
+   f[4] = font [z][4];
+   f[5] = font [z][5];
+   f[6] = font [z][6]; 
+   for (y = 0; y <7; y++){
+      for (x = 0 ; x < 5; x++) {
+         if ((f[y] & (0x40 >> x) ) != 0) set_pixel (x + i, y +j, color);
+         else set_pixel (x + i, y +j ,0x00);
+      }
+   }
+}
+void put_char_size2(int i, int j, char txt, char color){
+   char x =0, y=0 ,z = txt;
+   for (y = 0; y <7; y++){
+      for (x = 0 ; x < 5; x++) {
+         if ((font[z][y] & (0x40 >> x) ) != 0) {
+            set_pixel (x *2 + i, y*2  +j, color);
+            set_pixel (x *2 + i +1 , y*2  + j, color);
+            set_pixel (x *2 + i +1 , y*2  + j +1, color);
+            set_pixel (x *2 + i, y*2  +j +1 , color);
+         }
+         else {
+            set_pixel (x *2 + i, y*2  +j, 0);
+            set_pixel (x *2 + i +1 , y*2  + j,0);
+            set_pixel (x *2 + i +1 , y*2  + j +1, 0);
+            set_pixel (x *2 + i, y*2  +j +1 , 0);
+         }
+      }
+   }
+}
+// chuyen tu bcd rang int
+int bcd2dec(byte num)
+{
+        return ((num/16 * 10) + (num % 16));
+}
+/* Chuyển từ Decimal sang BCD */
+int dec2bcd(byte num)
+{
+        return ((num/10 * 16) + (num % 10));
+}
