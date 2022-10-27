@@ -33,8 +33,11 @@ const char font [][7] ={
 0x38,0x44,0x44,0x3C,0x04,0x08,0x30, //9 57
 0x00,0x60,0x60,0x00,0x60,0x60,0x00, //: 58
 };
+
+QueueHandle_t mode = NULL;
+QueueHandle_t on_off = NULL;
+
 void setup (){
-   Serial.begin(9600);
    Wire.begin();
    pinMode (G1, OUTPUT);// cài đặt chế độ hoạt động của các chân
    pinMode (R1, OUTPUT);
@@ -48,29 +51,35 @@ void setup (){
    pinMode (CLK, OUTPUT);
    pinMode (OE,  OUTPUT);
    pinMode (STB, OUTPUT);
-   put_char(15,1,10,0x04);
+   pinMode (2, INPUT_PULLUP);
+   pinMode (3, INPUT_PULLUP);
+   mode = xQueueCreate (1, sizeof (int));
+   on_off = xQueueCreate (1, sizeof(int));
+   int a = 0;
+   xQueueSend (mode , &a, 0);
+   xQueueSend (on_off , &a, 0);
    Read_real_time = xTimerCreate ("a", pdMS_TO_TICKS(950), pdTRUE,0, real_time);
-   Wire.beginTransmission(0x68);
-   Wire.write ((byte)0x00);
-   Wire.endTransmission ();
-   Wire.requestFrom (0x68, 7);
-   int x;
-   x = bcd2dec (Wire.read() & 0x7f);
-   put_char_size2(0,0,x/10,0x02);
-   //put_char(17,8,x%10,0x02);
-   x = bcd2dec(Wire.read() );
-   put_char(17,1,x/10,0x05);
-   put_char(22,1,x%10,0x05);
-   x = bcd2dec(Wire.read() & 0x3f);
-   put_char(5,1,x/10,0x05);
-   put_char(11,1,x%10,0x05);
    xRead_real_time = xTimerStart (Read_real_time, 0);
    xTaskCreate (xtask,"2",128,NULL, 1, NULL);
+   attachInterrupt(digitalPinToInterrupt(2),changeOnOff , RISING);
+   attachInterrupt(digitalPinToInterrupt(3),changeMode , RISING);
    vTaskStartScheduler();
-   
 }
 void loop (){
 }
+void changeMode (){
+   clear_display();
+   static int moe =0 ;
+   moe = (++ moe)%2;
+   xQueueOverwriteFromISR (mode, &moe, 0);
+}
+void changeOnOff (){
+   //Serial.println('1');
+   static int a;
+   a = (++a) % 2;
+   xQueueOverwriteFromISR(on_off, &a, 0);
+}
+
 static void real_time(){
    Wire.beginTransmission(0x68);
    Wire.write ((byte)0x00);
@@ -78,36 +87,50 @@ static void real_time(){
    Wire.requestFrom (0x68, 7);
    int x;
    x = bcd2dec (Wire.read() & 0x7f);
-   put_char(10,8,x/10,0x02);
-   put_char(17,8,x%10,0x02);
-   if (x == 0)  { 
-      x = bcd2dec(Wire.read() );
-      put_char(17,1,x/10,0x05);
-      put_char(22,1,x%10,0x05);
-      if (x == 0){
+   int b;
+   xQueuePeekFromISR (mode, &b);
+   switch (b) {
+      case 0:{
+         put_char(22,8,x/10,0x02);
+         put_char(27,8,x%10,0x02);
+         x = bcd2dec(Wire.read() );
+         put_char(22,1,x/10,0x05);
+         put_char(27,1,x%10,0x05);
+         x = bcd2dec(Wire.read() & 0x3f);
+         put_char_size2(0,1,x/10,0x05);
+         put_char_size2(11,1,x%10,0x04);
+         break;
+      }
+      case 1:{
+         put_char(15,1,10,0x04);
+         put_char(10,8,x/10,0x02);
+         put_char(17,8,x%10,0x02);
+         x = bcd2dec(Wire.read() );
+         put_char(17,1,x/10,0x05);
+         put_char(22,1,x%10,0x05);
          x = bcd2dec(Wire.read() & 0x3f);
          put_char(5,1,x/10,0x05);
          put_char(11,1,x%10,0x05);
+         break;
       }
    }
+
 }
+
 void xtask (void *pv ){
    while (1){
-      static unsigned char z = 0;// biến đếm hàng;
-      unsigned char i;
-      digitalWrite (OE, HIGH); // tắt hết LED
-      for (i = 0; i < 4; i++){
-         data_transfet (Buffer_display[0][z][i], Buffer_display[1][z][i],
-                        Buffer_display[2][z][i], Buffer_display[0][z+8][i],
-                        Buffer_display[1][z+8][i], Buffer_display[2][z+8][i]);
+      int a;
+      xQueuePeek(on_off, &a, 0);
+      switch (a){
+         case 0: {
+            digitalWrite(OE, HIGH);
+            break;
+         }
+         case 1:{
+            quet_led();
+            break;
+         }
       }
-      rows(z);
-      digitalWrite (STB, LOW); digitalWrite (STB, HIGH);
-      digitalWrite (OE, LOW);// bật LED
-      z++;
-      if (z == 8) z = 0;
-      int count;
-      delay(1);
    }
 }
 void data_transfet (char byte_r1, char byte_g1, char byte_b1, char byte_r2, char byte_g2, char byte_b2 ){ // chyển dữ liệu vào màn hình
@@ -164,9 +187,11 @@ void set_pixel (unsigned char x, unsigned char y, unsigned char color) {
 }
 void clear_display (){
    unsigned char i, j, k;
-   for (i = 0;i < 3; i++)
-   for (j =0; j < 32; j++)
-   for (k =0; k < 4; k++)Buffer_display [i][j][k] = 0x00;
+   for (i = 0;i < 16; i++)
+   for (j =0; j < 32; j++){
+      set_pixel(j,i,0x00);
+   }
+   
 
 }
 
@@ -196,7 +221,12 @@ void put_char_size2(int i, int j, char txt, char color){
             set_pixel (x *2 + i +1 , y*2  + j +1, color);
             set_pixel (x *2 + i, y*2  +j +1 , color);
          }
-         else set_pixel (x + i, y +j ,0x00);
+         else {
+            set_pixel (x *2 + i, y*2  +j, 0);
+            set_pixel (x *2 + i +1 , y*2  + j,0);
+            set_pixel (x *2 + i +1 , y*2  + j +1, 0);
+            set_pixel (x *2 + i, y*2  +j +1 , 0);
+         }
       }
    }
 }
