@@ -1,7 +1,7 @@
 #include <avr/interrupt.h>
 #include <Arduino_FreeRTOS.h>
 #include <queue.h>
-#include <Wire.h>
+
 #define R1  4
 #define G1  5
 #define B1  6
@@ -76,16 +76,10 @@ void setup() {
     TIMSK1 |= (1 << TOIE1); //Overflow interrupt enable
     //sei(); //Cho phép ngắt toàn cục
     set_pixel(2,3,0x02);
-    //xTaskCreate (taskDanceMusic,"1", 128, NULL, 2, NULL);
-    xTaskCreate (taskRealTime,"2", 128, )
+    xTaskCreate (taskDanceMusic,"1", 128, NULL, 2, NULL);
 }
 
 void loop(){}
-void taskRealTime (void *pv){
-   while (1){
-      
-   }
-}
 void taskDanceMusic (void *pv){
    int i, sensor;
    while (1){
