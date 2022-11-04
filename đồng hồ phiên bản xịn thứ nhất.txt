@@ -17,9 +17,12 @@
 #define C   A2
 #define M   A3
 unsigned char Buffer_display[3][16][4];
+TaskHandle_t animationHandle = NULL;
+TaskHandle_t danceOfMusicHandle = NULL;
+TaskHandle_t realTimeHandle = NULL;
 char col[32];
 int wday, day, month, year;
-char color_row[4] = {0x02, 0x03, 0x05, 0x01};
+char color_row[4] = {0x01, 0x03, 0x06, 0x02};
 const char font [][7] ={
 0x38,0x44,0x4C,0x54,0x64,0x44,0x38, //0 48
 0x10,0x30,0x10,0x10,0x10,0x10,0x38, //1 49
@@ -54,6 +57,7 @@ const char miniFont [][3] = {
 0xf8, 0xa8, 0xf8,// 8
 0xe8, 0xa8, 0xf8 // 9
 };
+QueueHandle_t mode = NULL;
 ISR (TIMER1_OVF_vect) //Chương trình ngắt Timer1
 { 
    static unsigned char z = 0;// biến đếm hàng;
@@ -88,6 +92,13 @@ void setup() {
     pinMode (OE,  OUTPUT);
     pinMode (STB, OUTPUT);
     pinMode (M, INPUT);
+    pinMode (2, INPUT_PULLUP);
+    pinMode (3, INPUT_PULLUP);
+    mode = xQueueCreate (1, sizeof (int));
+    int status = 0;
+    xQueueSend(mode, &status, 0);
+    attachInterrupt(digitalPinToInterrupt(3),changeOnMode , RISING);
+    //attachInterrupt(digitalPinToInterrupt(2),changeMode , RISING);
     getDate();
     cli(); //Tắt ngắt toàn cục
     TCCR1A = 0; //Reset Timer1
@@ -97,104 +108,116 @@ void setup() {
     TCNT1= 65500;
     TIMSK1 |= (1 << TOIE1); 
     sei();
-    //xTaskCreate (taskDanceMusic,"1", 128, NULL, 2, NULL);
-    xTaskCreate (taskRealTime,"2", 128, NULL, 2, NULL);
-    xTaskCreate (date,"3", 128, NULL, 2, NULL);
+    //xTaskCreate (taskDanceMusic,"1", 128, NULL, 2, &danceOfMusicHandle);
+    xTaskCreate (taskRealTime,"2", 128, NULL, 2, & realTimeHandle);
+    xTaskCreate (animation,"3", 128, NULL, 2, & animationHandle);
 }
 
 void loop(){}
-void date (void *pv){
+
+void changeOnMode () {
+   static int moe = 0 ;
+   moe = (++ moe)%3;
+   xQueueOverwriteFromISR (mode, &moe, 0);
+   vTaskResume(realTimeHandle);
+} 
+void animation (void *pv){
+   int x, y = 0,b;
    while (1){
-      char x =0, y=0; 
-      for (y = 0; y <7; y++){
-         for (x = 0 ; x < 5; x++) {
-            if ((dayOfTheWeek[wday-1][0][y] & (0x40 >> x) ) != 0) set_pixel (x + 0, y +8, 0x05);
-            else set_pixel (x + 0, y +8 ,0x00);
+      xQueuePeek(mode, &b,0);
+      if (b == 1) { 
+         for (x = 0 ; x < 16; x++){
+            draw_icon(x * 4,0,(y+x) % 3 +1 );
+            draw_icon1(32 - x * 4,15,(y+x) % 3 +1);
          }
-      }
-      vTaskDelay(20);
-      for (y = 0; y <7; y++){
-         for (x = 0 ; x < 5; x++) {
-            if ((dayOfTheWeek[wday-1][1][y] & (0x40 >> x) ) != 0) set_pixel (x + 5, y +8, 0x05);
-            else set_pixel (x + 5, y +8 ,0x00);
+         y++;
+         delay(100);
+      }else if (b == 0 ){
+         for (y = 0; y <7; y++){
+            for (x = 0 ; x < 5; x++) {
+               if ((dayOfTheWeek[wday-1][0][y] & (0x40 >> x) ) != 0) set_pixel (x + 0, y +9, 0x05);
+               else set_pixel (x + 0, y +9 ,0x00);
+            }
          }
-      }
-      vTaskDelay(20);
-      for (y = 0; y <7; y++){
-         for (x = 0 ; x < 5; x++) {
-            if ((dayOfTheWeek[wday - 1][2][y] & (0x40 >> x) ) != 0) set_pixel (x + 10, y +8, 0x05);
-            else set_pixel (x + 10, y +8 ,0x00);
+         vTaskDelay(20);
+         for (y = 0; y <7; y++){
+            for (x = 0 ; x < 5; x++) {
+               if ((dayOfTheWeek[wday-1][1][y] & (0x40 >> x) ) != 0) set_pixel (x + 5, y +9, 0x05);
+               else set_pixel (x + 5, y +9 ,0x00);
+            }
          }
-      }
-      vTaskDelay(20);
-      put_mini_number (16,10,day/10,0x04);
-      put_mini_number (20,10,day%10,0x04);
-      vTaskDelay(20);
-      put_mini_number (25,10,month/10,0x07);
-      put_mini_number (29,10,month%10,0x07);
-      delay (5000);
-      for (x =31; x >=0; x -- ){
-         for ( y =8; y < 16;y++){
-            set_pixel(x,y,0x00);
+         vTaskDelay(20);
+         for (y = 0; y <7; y++){
+            for (x = 0 ; x < 5; x++) {
+               if ((dayOfTheWeek[wday - 1][2][y] & (0x40 >> x) ) != 0) set_pixel (x + 10, y +9, 0x05);
+               else set_pixel (x + 10, y +9,0x00);
+            }
          }
-         vTaskDelay(5);
-      }
-      put_char (4,8,2,0x03);
-      vTaskDelay(20);
-      put_char (10,8,0,0x03);
-      vTaskDelay(20);
-      put_char (16,8,year /10,0x03);
-      vTaskDelay(20);
-      put_char (22,8,year %10,0x03);
-      delay (5000);
-      for (x =31; x >=0; x -- ){
-         for ( y =8; y < 16;y++){
-            set_pixel(x,y,0x00);
+         vTaskDelay(20);
+         put_mini_number (16,11,day/10,0x04);
+         put_mini_number (20,11,day%10,0x04);
+         vTaskDelay(20);
+         put_mini_number (25,11,month/10,0x07);
+         put_mini_number (29,11,month%10,0x07);
+         delay (5000);
+         for (x =31; x >=0; x -- ){
+            for ( y =9; y < 16;y++){
+               set_pixel(x,y,0x00);
+            }
+            vTaskDelay(5);
          }
-         vTaskDelay(5);
+         put_char (4,9,2,0x03);
+         vTaskDelay(20);
+         put_char (10,9,0,0x03);
+         vTaskDelay(20);
+         put_char (16,9,year /10,0x03);
+         vTaskDelay(20);
+         put_char (22,9,year %10,0x03);
+         delay (5000);
+         for (x =31; x >=0; x -- ){
+            for ( y =8; y < 16;y++){
+               set_pixel(x,y,0x00);
+            }
+            vTaskDelay(5);
+         }  
+      }else{
+         for (x =0; x<31;x++){
+            y = analogRead(M);
+            if (y > 507) y = y -508;
+            else y = 506- y;
+            drawRow (x,y/3);
+         }
       }
    }
 }
 void taskRealTime (void *pv){
-   getTime();
+   int nowStatus, nextStatus;
+   xQueuePeek(mode,&nowStatus, 0);
    while (1){
-      Wire.beginTransmission(0x68);
-      Wire.write ((byte)0x00);
-      Wire.endTransmission ();
-      Wire.requestFrom (0x68, 7);
-      int x;
-      x = bcd2dec (Wire.read() & 0x7f);
-      put_mini_number(24,3,x/10,0x03);
-      put_mini_number(28,3,x%10,0x03);
-      if ((x % 2 ) == 0){
-         draw_point(11,2,0x01);
-         draw_point(11,5,0x01);
-      }else {
-         draw_point(11,2,0x00);
-         draw_point(11,5,0x00);
+      xQueuePeek(mode,&nextStatus, 0);
+      if (nowStatus != nextStatus) { 
+         nowStatus = nextStatus;
+         vTaskDelete(animationHandle);
+         clear_display();
+         xTaskCreate (animation,"3", 128, NULL, 2, & animationHandle);
       }
-      if (x == 0){
-         x = bcd2dec (Wire.read());
-         put_char(13,1, x/10,0x02);
-         put_char(18, 1, x%10, 0x02);
-         if (x == 0){
-            x = bcd2dec (Wire.read());
-            put_char(1,1, x/10,0x02);
-            put_char(6, 1, x%10, 0x02);
-            if (x == 0) getDate();
-         }
+      if (nowStatus == 0){ 
+         getTime();
+      }else if (nowStatus == 1) {
+         getTime1();
+      }else {
+         vTaskSuspend(realTimeHandle);
       }
    }
 }
 void taskDanceMusic (void *pv){
-   int i, sensor;
+   int i, sensor, sensor2;
    while (1){
-      for (i =0; i<32;i++){
+      for (i =1; i<31;i++){
          sensor = analogRead(M);
-         if (sensor > 20) sensor = sensor -21;
-         else sensor = 20 - sensor;
-         sensor = sqrt(sensor);
-         drawRow (i,sensor);
+         if (sensor > 507) sensor = sensor -508;
+         else sensor = 506- sensor;
+         drawRow (i,sensor/3);
       }
    }
 }
@@ -243,22 +266,20 @@ void put_char (int i, int j, char txt, char color){
       }
    }
 }
-void put_mini_number(int i, int j, char txt, char color){
-   char x, y;
-   for (y = 0; y <3; y++){
-      for (x = 0 ; x < 5; x++) {
-         if ((miniFont[txt][y] & (0x80 >> x)) != 0) set_pixel(y+i, x+j, color);
-         else set_pixel(y+i, x+j, 0x00);
-      }
-   }
-}
-
-void drawRow(int x, int height){
+void drawRow(int x,int height){
    int i;
    if (height > 14) height = 14;
    height = 15 - height;
-   for (i = height; i<col[x]; i++) set_pixel(x,i,color_row[height / 4]);
-   for (i = col[x]; i< height;i++) set_pixel(x,i,0x00);
+   for (i = 14; i > height +1; i--) set_pixel(x,i,0x02);
+   if (i <= 14){ 
+      set_pixel (x,i,0x03);
+      i--;
+   }
+   if (i < 13) {
+      set_pixel (x,i, 0x01);
+      i--;
+   }
+   for (; i >= 0;i--) set_pixel(x,i,0x00);
    col[x] = height;
 }
 int bcd2dec(byte num){
@@ -289,17 +310,88 @@ void getTime(){
    x = bcd2dec (Wire.read() & 0x7f);
    put_mini_number(24,3,x/10,0x03);
    put_mini_number(28,3,x%10,0x03);
+   if (x %2 == 0){ 
+      draw_point(11,2,0x01);
+      draw_point(11,5,0x01);
+   }else {  
+      draw_point(11,2,0x00);
+      draw_point(11,5,0x00);
+   }
    x = bcd2dec (Wire.read());
    put_char(13,1, x/10,0x02);
    put_char(18, 1, x%10, 0x02);
    x = bcd2dec (Wire.read());
    put_char(1,1, x/10,0x02);
    put_char(6, 1, x%10, 0x02);
-}
+   if (x == 0){
+      getDate();
+   }
 
+}
+void getTime1(){
+   Wire.beginTransmission(0x68);
+   Wire.write ((byte)0x00);
+   Wire.endTransmission ();
+   Wire.requestFrom (0x68, 7);
+   int x;
+   x = bcd2dec (Wire.read() & 0x7f);
+   if (x %2 == 0){ 
+      draw_point(15,5,0x02);
+      draw_point(15,9,0x02);
+   }else {  
+      draw_point(15,5,0x00);
+      draw_point(15,9,0x00);
+   }
+   x = bcd2dec (Wire.read());
+   put_mini_number_2(18,3,x/10,0x01);
+   put_mini_number_2(25,3,x%10,0x01);
+   x = bcd2dec (Wire.read());
+   put_mini_number_2(1,3,x/10,0x01);
+   put_mini_number_2(8,3,x%10,0x01);
+   if (x == 0){
+      getDate();
+   }
+}
 void draw_point (int x, int y, char color){
    set_pixel (x ,y, color);
    set_pixel (x+1,y, color);
    set_pixel (x+1,y+1, color);
    set_pixel (x,y+1, color);
+}
+void put_mini_number(int i, int j, char txt, char color){
+   char x, y;
+   for (y = 0; y <3; y++){
+      for (x = 0 ; x < 5; x++) {
+         if ((miniFont[txt][y] & (0x80 >> x)) != 0) set_pixel(y+i, x+j, color);
+         else set_pixel(y+i, x+j, 0x00);
+      }
+   }
+}
+void put_mini_number_2(int i, int j, char txt, char color){
+   char x, y;
+   for (y = 0; y <3; y++){
+      for (x = 0 ; x < 5; x++) {
+         if ((miniFont[txt][y] & (0x80 >> x)) != 0) draw_point(2*y +i, x*2 +j, color);
+         else draw_point(2*y +i, x*2 +j, 0x00);
+      }
+   }
+}
+void draw_icon(int x, int y, char color){
+   set_pixel (x , y, color);
+   set_pixel (x+1 , y+1, color);
+   set_pixel (x+1 , y, color);
+   set_pixel (x+2 , y, color);
+}
+void draw_icon1(int x, int y, char color){
+   set_pixel (x , y, color);
+   set_pixel (x+1 , y-1, color);
+   set_pixel (x+1 , y, color);
+   set_pixel (x+2 , y, color);
+}
+void clear_display (){
+   unsigned char i, j;
+   for (i = 0;i < 16; i++)
+   for (j =0; j < 32; j++){
+      set_pixel(j,i,0x00);
+   }
 }
